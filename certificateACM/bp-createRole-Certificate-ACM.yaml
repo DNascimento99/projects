@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Stack for creating Role, Inline Policies for AWS Account
+Resources:
+  BPExecutionInlinePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "Allow_Lambda"
+      Roles:
+        - !Ref BPDefaultExecutionRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Action:
+              - "ACM:*"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "iam:ListRoles"
+              - "iam:GetRole"
+              - "iam:GetPolicy"
+              - "iam:GetPolicyVersion"
+            Resource: 
+              - "arn:aws:iam::435832608476:policy/Allow_lambda"
+  BPDefaultExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/${AWS::StackId}"
+        - Key: Squad
+          Value: CloudEngineer
+        - Key: CreateBy
+          Value: Linkpartners
+      RoleName: "bp-devops-lambda-acm-list-dev-certificateChecker-assumeRole"
+      Description: "Setup Default Execution Stack"     
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+               "AWS": "arn:aws:iam::435832608476:root"                    
+            Action: 
+              - sts:AssumeRole
+Outputs:
+  Role:
+    Description: Role ARN
+    Value: 
+      "Fn::GetAtt": ["BPDefaultExecutionRole", "Arn"]
+    Export:
+      Name: BPDefaultExecutionRole-Arn
+
+# para executar esse template usando aws cli, apenas rodar esse comando
+# aws cloudformation deploy --stack-name Create-Role-Project-Certificate-ACM \
+#     --capabilities CAPABILITY_NAMED_IAM \
+#     --template-file "./bp-createRole-Certificate-ACM.yaml" \
+#     && aws cloudformation describe-stacks \
+#     --stack-name Create-Role-Project-Certificate-ACM \
+#     --query 'Stacks[0].Outputs[?OutputKey==`Role`].OutputValue' \
+#     --output text

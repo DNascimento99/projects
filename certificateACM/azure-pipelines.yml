@@ -1,0 +1,67 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- staging
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.7'
+    addToPath: true
+  displayName: Install Python
+
+- task: NodeTool@0
+  inputs:
+    versionSource: 'spec'
+    versionSpec: '14.x'
+  displayName:  Install Node
+
+- task: Bash@3
+  inputs:
+    targetType: 'inline'
+    script: 'npm install -g serverless'
+  displayName:  Install Serverless Dependencies and Plugins
+    
+- script: |
+    aws configure set aws_access_key_id $(AWS_ACCESS_KEY_ID)
+    aws configure set aws_secret_access_key $(AWS_SECRET_ACCESS_KEY)
+    aws configure set region $(AWS_REGION)
+    aws configure set aws_session_token $(AWS_SESSION_TOKEN)
+  displayName: 'aws configure'
+
+#- task: CopyFiles@2
+#  inputs:
+#    SourceFolder: './'
+#    Contents: 'serverless.yml'
+#    TargetFolder: './node_modules/.bin/serverless'
+
+- task: Bash@3
+  inputs:
+    awsCredentials: 'aws-sandbox-sc-test'
+    targetType: 'inline'
+    script: 'serverless deploy'
+  displayName: 'Serverless Deploy'
+
+#- task: CopyFiles@2
+#  inputs:
+#    SourceFolder: '.'
+#    Contents: '**'
+#    TargetFolder: 'drop'
+#  displayName: 'Copy Files to Artifact Directory'
+
+#- task: PublishBuildArtifacts@1
+#  displayName: 'Publish build artifacts'
+#  inputs:
+#      PathtoPublish: 'drop'
+#      ArtifactName: 'drop'
+#      publishLocation: 'Container'
+
+- script: |
+    aws sns subscribe --topic-arn arn:aws:sns:us-east-1:435832608476:bp-devops-lambda-acm-list-dev-MySNSTopic --protocol email --notification-endpoint 3c824140.brasilprev.com.br@br.teams.ms
+  displayName: 'Subscrição de assinatura SNS'

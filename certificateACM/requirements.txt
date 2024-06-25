@@ -1,0 +1,5 @@
+arnparse==0.0.2
+prettytable==3.9.0
+wcwidth==0.2.12
+boto3==1.18.48
+botocore==1.21.48

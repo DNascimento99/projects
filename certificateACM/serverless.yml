@@ -1,0 +1,70 @@
+service: bp-devops-lambda-acm-list # Altere para o nome do seu serviço
+
+provider:
+  name: aws
+  runtime: python3.9
+  timeout: 20
+  iam:
+    role:
+      managedPolicies:
+        - arn:aws:iam::435832608476:policy/Allow_lambda
+        - arn:aws:iam::aws:policy/IAMReadOnlyAccess
+functions:
+  certificateChecker:
+    handler: lambda_function.lambda_handler
+    events:
+      - eventBridge:
+          eventBus: default
+          pattern:
+            source:
+              - "aws.cloudwatch"
+            detail-type:
+              - "Scheduled Event"
+          schedule: rate(7 days)  # Configuração para acionar a cada 7 dias
+    environment:
+      SNS_TOPIC_ARN:
+        Ref: MySNSTopic  
+package:
+  include:
+    - requirements.txt
+resources:
+  Resources:
+    MySNSTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        DisplayName: "MySnsTopicDisplayName"  # Altere para o nome desejado
+        TopicName: "bp-devops-lambda-acm-list-dev-MySNSTopic"
+    MyCloudWatchDashboard:
+      Type: AWS::CloudWatch::Dashboard
+      Properties:
+        DashboardName: "bp-devops-lambda-acm-list-Dashborad"
+        DashboardBody: !Sub |
+          {
+            "widgets": [
+              {
+                "type": "text",
+                "x": 0,
+                "y": 0,
+                "width": 24,
+                "height": 1,
+                "properties": {
+                  "markdown": "# My Custom Dashboard"
+                }
+              },
+              {
+                "type": "custom",
+                "x": 0,
+                "y": 0,
+                "width": 24,
+                "height": 8,
+                "properties": {
+                    "endpoint": "arn:aws:lambda:us-east-1:435832608476:function:bp-devops-lambda-acm-list-dev-certificateChecker",
+                    "updateOn": {
+                        "refresh": true,
+                        "resize": true,
+                        "timeRange": true
+                    }
+                }
+              }
+            ]
+          }
