@@ -21,7 +21,7 @@ Resources:
               - "iam:GetPolicy"
               - "iam:GetPolicyVersion"
             Resource: 
-              - "arn:aws:iam::435832608476:policy/Allow_lambda"
+              - "arn:aws:iam::${AWS::AccountId}:policy/Allow_lambda"
   BPDefaultExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -40,7 +40,7 @@ Resources:
           -
             Effect: "Allow"
             Principal:
-               "AWS": "arn:aws:iam::435832608476:root"                    
+               "AWS": "arn:aws:iam::${AWS::AccountId}:root"                    
             Action: 
               - sts:AssumeRole
 Outputs:
