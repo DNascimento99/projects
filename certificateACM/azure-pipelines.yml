@@ -63,5 +63,5 @@ steps:
 #      publishLocation: 'Container'
 
 - script: |
-    aws sns subscribe --topic-arn arn:aws:sns:us-east-1:435832608476:bp-devops-lambda-acm-list-dev-MySNSTopic --protocol email --notification-endpoint 3c824140.brasilprev.com.br@br.teams.ms
+    aws sns subscribe --topic-arn arn:aws:sns:us-east-1:${AWS::AccountId}:bp-devops-lambda-acm-list-dev-MySNSTopic --protocol email --notification-endpoint 3c824140.brasilprev.com.br@br.teams.ms
   displayName: 'Subscrição de assinatura SNS'
