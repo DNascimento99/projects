@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: 'Create AWS Lambda and AWS EventBridge for notify events occur in AWS ASG'
+Parameters:
+  WebHook1:
+    Type: String
+    Default: ''
+    Description: "WebHook for notify Microsoft Teams"
+  WebHook2:
+    Type: String
+    Default: ''
+    Description: "WebHook for notify Microsoft Teams"
+  TagCreatedBy:
+    Type: String
+    Default: "Daniel"
+    Description: "Tag for CreatedBy"
+Resources:
+  FunctionASGNotificateEvents:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Timeout: 6
+      Role: !GetAtt FunctionASGNotificationEventsRole.Arn
+      Tags:
+        - Key: createBy
+          Value: !Ref TagCreatedBy
+        - Key: Squad
+          Value: !Ref TagSquad
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import urllib.request
+
+          def lambda_handler(event, context):
+              if 'detail' in event:
+                  d2 = event['detail']
+                  print(d2)
+                  message = {'text': 'Uma alteração foi realizada no código ASG.'}
+                  if d2['detail']['eventName'] == 'DeleteTags':
+                      tags = d2['detail']['requestParameters']['tags']
+                      resourceId = tags[0]['resourceId'] if tags else None
+                      message['text'] = f"Uma tag foi deletada do ASG {resourceId} pelo usuário {d2['detail']['userIdentity']['principalId']}."
+                  if d2['detail']['eventName'] == 'CreateOrUpdateTags':
+                      tags = d2['detail']['requestParameters']['tags']
+                      resourceId = tags[0]['resourceId'] if tags else None
+                      message['text'] = f"Uma tag foi adicionada ao ASG {resourceId} pelo usuário {d2['detail']['userIdentity']['principalId']}."
+                  data = json.dumps(message)
+                  headers = {'Content-Type': 'application/json'}
+                          
+                  req1 = urllib.request.Request(os.environ['TEAMS_WEBHOOK1'], data=data.encode('utf-8'), headers=headers)
+                  try:
+                      response1 = urllib.request.urlopen(req1)
+                      response1.read()
+                  except urllib.error.HTTPError as e:
+                      print(f"Erro no primeiro webhook {e.code}: {e.reason}")
+                      print(e.read())
+                  except urllib.error.URLError as e:
+                      print(f"Erro na conexão do primeiro webhook: {e.reason}")
+                  except Exception as e:
+                      print(f"Erro desconhecido do primeiro webhook: {e}")
+
+                  # Enviar para o segundo webhook
+                  req2 = urllib.request.Request(os.environ['TEAMS_WEBHOOK2'], data=data.encode('utf-8'), headers=headers)
+                  try:
+                      response2 = urllib.request.urlopen(req2)
+                      response2.read()
+                  except urllib.error.HTTPError as e:
+                      print(f"Erro no segundo webhook {e.code}: {e.reason}")
+                      print(e.read())
+                  except urllib.error.URLError as e:
+                      print(f"Erro na conexão do segundo webhook: {e.reason}")
+                  except Exception as e:
+                      print(f"Erro desconhecido do segundo webhook: {e}")
+      Environment:
+        Variables:
+          TEAMS_WEBHOOK1: !Ref WebHook1
+          TEAMS_WEBHOOK2: !Ref WebHook2
+
+  FunctionASGNotificationEventsRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/service-role/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: createBy
+          Value: !Ref TagCreatedBy
+
+  EventBridgeASGNotificateEvents:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: EventBridge_ASGNotificateEvents
+      Description: "EventRule"
+      EventPattern:
+        source: ["aws.autoscaling"]
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventSource: ["autoscaling.amazonaws.com"]
+          eventName: ["DeleteTags","CreateOrUpdateTags"]
+      Targets:
+        - Arn: !GetAtt FunctionASGNotificateEvents.Arn
+          Id: "EventBridgeTarget"
+
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !Ref FunctionASGNotificateEvents
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn: !GetAtt EventBridgeASGNotificateEvents.Arn

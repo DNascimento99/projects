@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: 'Create AWS Lambda and AWS EventBridge for notify events occur in AWS RDS'
+Parameters:
+  WebHook1:
+    Type: String
+    Default: ''
+    Description: "WebHook for notify Microsoft Teams"
+  WebHook2:
+    Type: String
+    Default: ''
+    Description: "WebHook for notify Microsoft Teams"
+  TagCreatedBy:
+    Type: String
+    Default: "Daniel"
+    Description: "Tag for CreatedBy"
+Resources:
+  FunctionRDSNotificateEvents:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Timeout: 6
+      Role: !GetAtt FunctionRDSNotificationEventsRole.Arn
+      Tags:
+        - Key: createBy
+          Value: !Ref TagCreatedBy
+        - Key: Squad
+          Value: !Ref TagSquad
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import urllib.request
+
+          def lambda_handler(event, context):
+              if 'detail' in event:
+                  d2 = event['detail']
+                  print(d2)
+                  message = {'text': 'Uma alteração foi realizada no código RDS.'}
+                  if d2['eventName'] == 'CreateDBInstance':
+                      dBInstanceIdentifier = requestParameters.get('dBInstanceIdentifier', '')
+                      message['text'] = f"O RDSInstance {d2['responseElements']['dBInstanceIdentifier']} foi criado pelo usuário {d2['userIdentity']['sessionContext']['sessionIssuer']['principalId']}."
+                  if d2['eventName'] == 'DeleteDBInstance':
+                      message['text'] = f"O RDSInstance {d2['responseElements']['dBInstanceIdentifier']} foi deletado pelo usuário {d2['userIdentity']['sessionContext']['sessionIssuer']['principalId']}."
+                  if d2['eventName'] == 'ModifyDBInstance':
+                      message['text'] = f"O RDSInstance {d2['responseElements']['dBInstanceIdentifier']} foi modificado pelo usuário {d2['userIdentity']['sessionContext']['sessionIssuer']['principalId']}."
+                  if d2['eventName'] == 'RemoveTagsFromResource':
+                      message['text'] = f"Uma tag foi removida do banco {d2['requestParameters']['resourceName']} pelo usuário {d2['userIdentity']['sessionContext']['sessionIssuer']['principalId']}."
+                  if d2['eventName'] == 'AddTagsToResource':
+                      message['text'] = f"Uma tag foi adicionada no banco {d2['requestParameters']['resourceName']} pelo usuário {d2['userIdentity']['sessionContext']['sessionIssuer']['principalId']}."
+                  data = json.dumps(message)
+                  headers = {'Content-Type': 'application/json'}
+                          
+                  req1 = urllib.request.Request(os.environ['TEAMS_WEBHOOK1'], data=data.encode('utf-8'), headers=headers)
+                  try:
+                      response1 = urllib.request.urlopen(req1)
+                      response1.read()
+                  except urllib.error.HTTPError as e:
+                      print(f"Erro no primeiro webhook {e.code}: {e.reason}")
+                      print(e.read())
+                  except urllib.error.URLError as e:
+                      print(f"Erro na conexão do primeiro webhook: {e.reason}")
+                  except Exception as e:
+                      print(f"Erro desconhecido do primeiro webhook: {e}")
+
+                  # Enviar para o segundo webhook
+                  req = urllib.request.Request(os.environ['TEAMS_WEBHOOK2'], data=data.encode('utf-8'), headers=headers)
+                  try:
+                      response2 = urllib.request.urlopen(req2)
+                      response2.read()
+                  except urllib.error.HTTPError as e:
+                      print(f"Erro no segundo webhook {e.code}: {e.reason}")
+                      print(e.read())
+                  except urllib.error.URLError as e:
+                      print(f"Erro na conexão do segundo webhook: {e.reason}")
+                  except Exception as e:
+                      print(f"Erro desconhecido do segundo webhook: {e}")
+      Environment:
+        Variables:
+          TEAMS_WEBHOOK1: !Ref WebHook1
+          TEAMS_WEBHOOK2: !Ref WebHook2
+
+  FunctionRDSNotificationEventsRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/service-role/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: createBy
+          Value: !Ref TagCreatedBy
+
+  EventBridgeRDSNotificateEvents:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: EventBridge_RDSNotificateEvents
+      Description: "EventRule"
+      EventPattern:
+        source: ["aws.rds"]
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventSource: ["rds.amazonaws.com"]
+          eventName: ["RemoveTagsFromResource","AddTagsToResource","CreateDBInstance","DeleteDBInstance","CreateDBCluster","DeleteDBCluster","ModifyDBInstance"]
+      Targets:
+        - Arn: !GetAtt FunctionRDSNotificateEvents.Arn
+          Id: "EventBridgeTarget"
+
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !Ref FunctionRDSNotificateEvents
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn: !GetAtt EventBridgeRDSNotificateEvents.Arn

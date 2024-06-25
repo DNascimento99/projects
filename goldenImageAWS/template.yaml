@@ -1,0 +1,295 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: 'Create EC2 ImageBuilder with lambda for execution in the instancerefresh'
+  
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: "EC2 Image Builder Sample"
+    Description: "The name of the environment"
+  AmazonLinux2LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+    Description: "The ID of the latest Amazon Linux 2 AMI"
+  BuildInstanceType:
+    Type: String
+    Default: "t3.micro"
+    Description: "The instance type for Image Builder"
+  SampleLaunchTemplate:
+    Type: String
+    Default: '' #Informar LaunchTemplate Existente
+    Description: "The ID of the sample launch template"
+  SampleAutoScalingGroup:
+    Type: String
+    Default: '' #Informar ASG Existente
+    Description: "The name of the sample Auto Scaling group"
+  PublicSubnet:
+    Type: String
+    Default: '' #Informar SubNet Existente 
+    Description: "The ID of the public subnet"
+  DefaultSecurityGroup:
+    Type: String
+    Default: "" #Informar SG Existente
+    Description: "The ID of the default security group for Image Builder"
+
+Resources:
+  InstanceRefreshHandler:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Timeout: 30
+      Role: !GetAtt InstanceRefreshHandlerLambdaRole.Arn
+      CodeUri: InstanceRefreshHandler/
+      Environment:
+        Variables:
+          AutoScalingGroupName: !Ref SampleAutoScalingGroup
+          LaunchTemplateId: !Ref SampleLaunchTemplate
+
+  InstanceRefreshHandlerLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: 
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/service-role/"
+      Policies:
+      - PolicyName: lambdaExecution-InstanceRefreshHandler
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            Resource: '*'
+          - Effect: Allow
+            Action:
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            - logs:TagResource
+            Resource: '*'
+          - Effect: Allow
+            Action:
+            - autoscaling:StartInstanceRefresh
+            - autoscaling:Describe*
+            - autoscaling:UpdateAutoScalingGroup
+            - autoscaling:CancelInstanceRefresh
+            - ec2:CreateLaunchTemplateVersion
+            - ec2:DescribeLaunchTemplates
+            - ec2:RunInstances
+            - s3:ListBucket
+            Resource: '*'
+          - Effect: Allow
+            Action:
+            - autoscaling:StartInstanceRefresh
+            - autoscaling:RollbackInstanceRefresh
+            - autoscaling:CancelInstanceRefresh
+            Resource: '*'
+            Condition:
+              StringEquals:
+                autoscaling:ResourceTag/managed-by-me: "true"
+          - Effect: Allow
+            Action:
+            - ec2:CreateTags
+            Resource: '*'
+            Condition:
+              StringEquals:
+                ec2:CreateAction: "RunInstances"
+          - Effect: Allow
+            Action:
+            - iam:PassRole
+            Resource: '*'
+            Condition:
+              StringEquals:
+                iam:PassedToService: "ec2.amazonaws.com"
+
+  ImageBuilderSNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      Subscription:
+        - Endpoint: !GetAtt InstanceRefreshHandler.Arn
+          Protocol: lambda
+          
+  SNSLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+        FunctionName: !GetAtt InstanceRefreshHandler.Arn
+        Action: lambda:InvokeFunction
+        Principal: sns.amazonaws.com
+        SourceArn: !Ref ImageBuilderSNSTopic
+  
+  EC2ImageBuilderComponent:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: EC2ImageBuilderComponent-Dev
+      Description: test.
+      Platform: Linux
+      Version: '1.0.0'
+      Data: |
+        name: imageBuilderDemo-apacheWebServer
+        description: 'This Image Builder component will install Apache web-server and configure the index.html file with a simple message'
+        schemaVersion: 1.0
+        phases:
+            - name: build
+              steps:
+                - name: CreateDirectory
+                  action: CreateFolder
+                  onFailure: Abort
+                  maxAttempts: 3
+                  inputs:
+                    - path: /home/ssm-user/recipe/
+                      overwrite: true
+                - name: MyS3DownloadKeyprefix
+                  action: S3Download
+                  maxAttempts: 3
+                  inputs:
+                    - source: s3://ec2-imagebuilders3-dev/execute-test/arquivo.sh
+                      destination: /home/ssm-user/recipe/arquivo.sh
+                - name: Permission
+                  action: SetFilePermissions
+                  onFailure: Abort
+                  maxAttempts: 3
+                  inputs:
+                    - path: /home/ssm-user/recipe/arquivo.sh
+                      permissions: 766
+                - name: ExecuteScript
+                  action: ExecuteBash
+                  onFailure: Abort
+                  maxAttempts: 3
+                  inputs:
+                    commands: 
+                    - sudo /home/ssm-user/recipe/arquivo.sh
+                - name: RemoveScript
+                  action: DeleteFile
+                  onFailure: Abort
+                  maxAttempts: 3
+                  inputs:
+                    - path: /home/ssm-user/recipe/arquivo.sh
+                - name: DeleteS3Object
+                  action: ExecuteBash
+                  onFailure: Abort
+                  maxAttempts: 3
+                  inputs:
+                    commands: 
+                    - aws s3 rm s3://ec2-imagebuilders3-dev/execute-test/arquivo.sh
+
+  EC2ImageBuilderRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: EC2ImageBuilderRecipe-Dev
+      Description: This recipe updates the system and installs Docker CE 
+      ParentImage: !Ref AmazonLinux2LatestAmiId
+      Components:
+        - ComponentArn: !Sub "arn:aws:imagebuilder:${AWS::Region}:aws:component/update-linux/1.0.0/1"
+        - ComponentArn: !Ref EC2ImageBuilderComponent
+      Version: "1.0.0"
+     
+  EC2ImageBuilderPipeline:
+    Type: AWS::ImageBuilder::ImagePipeline
+    Properties:
+      Name: Ec2ImageBuilderPipeline-Dev
+      ImageRecipeArn: !Ref EC2ImageBuilderRecipe
+      InfrastructureConfigurationArn: !Ref EC2ImageBuilderInfrastructureConfiguration
+      DistributionConfigurationArn: !Ref EC2ImageBuilderDistributionConfiguration
+
+  EC2ImageBuilderInfrastructureConfiguration:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties: 
+      Name: Ec2ImageBuilderInfraestructure-Dev
+      InstanceTypes: 
+        - !Ref BuildInstanceType
+      InstanceProfileName: !Ref EC2ImageBuilderIAMInstanceProfile
+      SnsTopicArn: !Ref ImageBuilderSNSTopic
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: [!Ref DefaultSecurityGroup]
+      TerminateInstanceOnFailure: true
+
+  EC2ImageBuilderDistributionConfiguration:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: Ec2ImageBuilderDistribuition-Dev
+      Distributions:
+      - AmiDistributionConfiguration:
+          Name: Ec2ImageBuilderAMI-Dev - {{ imagebuilder:buildDate }}
+          LaunchPermissionConfiguration:
+            UserIds:
+            - !Sub ${AWS::AccountId}
+        Region: !Sub ${AWS::Region}
+        LaunchTemplateConfigurations:
+          - LaunchTemplateId: !Ref SampleLaunchTemplate
+            AccountId: !Sub ${AWS::AccountId}
+            SetDefaultVersion: true
+
+  ExecutionInlinePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: Allow
+      Roles:
+        - !Ref EC2ImageBuilderIAMRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Action:
+              - "s3:*"
+            Resource: 
+              - "arn:aws:s3:::ec2-imagebuilders3-dev"
+              - "arn:aws:s3:::ec2-imagebuilders3-dev/*"
+          - Effect: "Allow"
+            Action:
+              - "s3:listallmybuckets"
+            Resource: 
+              - "*"
+          - Effect: "Allow"
+            Action:
+              - "imagebuilder:StartImagePipelineExecution"
+            Resource: 
+              - arn:aws:imagebuilder:${AWS::Region}:${AWS::AccountId}:image-pipeline/ec2imagebuilderpipeline-dev
+
+  EC2ImageBuilderIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - ec2.amazonaws.com 
+                - events.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+  EC2ImageBuilderEventBridge: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: Ec2ImageBuilderTriggerEventBridge-Dev
+      Description: "EventRule"
+      EventPattern: 
+        source: ["aws.s3"]
+        detail-type: 
+          - "AWS API Call via CloudTrail"
+        detail: 
+          eventSource: ["s3.amazonaws.com"]
+          eventName: ["PutObject"]
+          requestParameters: 
+            bucketName: ["ec2-imagebuilders3-dev"]
+      Targets: 
+        - Arn: !GetAtt EC2ImageBuilderPipeline.Arn
+          Id: "EC2ImageBuilderEventBridge"
+          RoleArn: !GetAtt EC2ImageBuilderIAMRole.Arn
+
+  EC2ImageBuilderIAMInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EC2ImageBuilderIAMRole

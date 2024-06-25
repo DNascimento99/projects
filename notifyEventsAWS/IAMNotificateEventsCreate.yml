@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Create AWS Lambda and AWS EventBridge for notify events occur in AWS IAM'
+Parameters:
+  WebHook1:
+    Type: String
+    Default: ''
+    Description: "WebHook for notify Microsoft Teams"
+  WebHook2:
+    Type: String
+    Default: ''
+    Description: "WebHook for notify Microsoft Teams"
+  TagCreatedBy:
+    Type: String
+    Default: "Daniel"
+    Description: "Tag for CreatedBy"
+Resources:
+  FunctionIAMNotificateEvents:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: index.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Timeout: 6
+      Role: !GetAtt FunctionIamNotificationEventsRole.Arn
+      Tags:
+        - Key: createBy
+          Value: !Ref TagCreatedBy
+        - Key: Squad
+          Value: !Ref TagSquad
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import urllib.request
+
+          def lambda_handler(event, context):
+              if 'detail' in event:
+                  d2 = event['detail']
+                  print(d2)
+                  message = {'text': 'Uma alteração foi realizada no código IAM.'}
+                  event_name = d2['eventName']
+                  if event_name == 'StopLogging':
+                      message['text'] = 'CloudTrail Disabled'
+                  elif event_name == 'CreateAccessKey':
+                      accessKeyId = d2['responseElements']['accessKey']['accessKeyId']
+                      userName = d2['responseElements']['accessKey']['userName']
+                      sessionIssuer = d2['userIdentity']['sessionContext']['sessionIssuer']
+                      message['text'] = (f"Uma accessKey de ID:{accessKeyId} referente ao usuário:{userName} foi criada pelo {d2['userIdentity']['sessionContext']['sessionIssuer']['userName']} na conta ID:{d2['userIdentity']['sessionContext']['sessionIssuer']['accountId']}.")
+                  elif event_name == 'DeleteAccessKey':
+                      accessKeyId = d2['requestParameters']['accessKeyId']
+                      userName = d2['requestParameters']['userName']
+                      sessionIssuer = d2['userIdentity']['sessionContext']['sessionIssuer']
+                      message['text'] = (f"Uma accessKey de ID:{accessKeyId} referente ao usuário:{userName} foi deletada pelo {d2['userIdentity']['sessionContext']['sessionIssuer']['userName']} na conta ID:{d2['userIdentity']['sessionContext']['sessionIssuer']['accountId']}.")    
+                  data = json.dumps(message)
+                  headers = {'Content-Type': 'application/json'}
+                  req = urllib.request.Request(os.environ['TEAMS_WEBHOOK'], data=data.encode('utf-8'), headers=headers)
+                  try:
+                      response = urllib.request.urlopen(req)
+                      response.read()
+                  except urllib.error.HTTPError as e:
+                      print(f"Erro {e.code}: {e.reason}")
+                      print(e.read())
+                  except urllib.error.URLError as e:
+                      print(f"Erro na conexão: {e.reason}")
+                  except Exception as e:
+                      print(f"Erro desconhecido: {e}")
+      Environment:
+        Variables:
+          TEAMS_WEBHOOK: !Ref WebHook
+
+  FunctionIamNotificationEventsRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/service-role/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: createBy
+          Value: !Ref TagCreatedBy
+
+  EventBridgeIAMNotificateEvents:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: EventBridge_IAMNotificateEvents
+      Description: "EventRule"
+      EventPattern:
+        source: ["aws.iam"]
+        detail-type:
+          - "AWS API Call via CloudTrail"
+        detail:
+          eventSource: ["iam.amazonaws.com"]
+          eventName: ["CreateAccessKey", "DeleteAccessKey"]
+      Targets:
+        - Arn: !GetAtt FunctionIAMNotificateEvents.Arn
+          Id: "EventBridgeTarget"
+
+  LambdaInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !Ref FunctionIAMNotificateEvents
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn: !GetAtt EventBridgeIAMNotificateEvents.Arn
