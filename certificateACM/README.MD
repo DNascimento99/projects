@@ -32,7 +32,7 @@ Será utilizado uma pipeline no Azure DevOps para criar os recursos do informado
         iam:
             role:
             managedPolicies:
-                - arn:aws:iam::435832608476:policy/Allow_Lambda
+                - arn:aws:iam::${AWS::AccountId}:policy/Allow_Lambda
                 - arn:aws:iam::aws:policy/IAMReadOnlyAccess 
 ```
 
@@ -49,7 +49,7 @@ Será utilizado uma pipeline no Azure DevOps para criar os recursos do informado
 		{
 			"Effect": "Allow",
 			"Action": "SNS:Publish",
-			"Resource": "arn:aws:sns:us-east-1:435832608476:bp-devops-lambda-acm-list-dev-MySNSTopic"
+			"Resource": "arn:aws:sns:us-east-1:${AWS::AccountId}:bp-devops-lambda-acm-list-dev-MySNSTopic"
 		},
 		{
 			"Sid": "Statement1",
@@ -103,7 +103,7 @@ resources:
 ```
 * Após criado o tópico deve ser rodado o seguinte comando para criação da assinatura no sns com intuito de enviar notificação ao Microsoft Tems
 ```bash
-$ aws sns subscribe --topic-arn arn:aws:sns:us-east-1:435832608476:bp-devops-lambda-acm-list-dev-MySNSTopic --protocol email --notification-endpoint 3c824140.brasilprev.com.br@br.teams.ms
+$ aws sns subscribe --topic-arn arn:aws:sns:us-east-1:${AWS::AccountId}:bp-devops-lambda-acm-list-dev-MySNSTopic --protocol email --notification-endpoint ##informar endpoint
 ```
 *Deverá autorizar no microsoftteams no grupo de certificate_test*
 
@@ -262,7 +262,7 @@ MyCloudWatchDashboard:
                 "width": 24,
                 "height": 8,
                 "properties": {
-                    "endpoint": "arn:aws:lambda:us-east-1:435832608476:function:bp-devops-lambda-acm-list-dev-certificateChecker",
+                    "endpoint": "arn:aws:lambda:us-east-1:${AWS::AccountId}:function:bp-devops-lambda-acm-list-dev-certificateChecker",
                     "updateOn": {
                         "refresh": true,
                         "resize": true,
