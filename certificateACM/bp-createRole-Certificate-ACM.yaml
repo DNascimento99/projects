@@ -4,7 +4,7 @@ Resources:
   BPExecutionInlinePolicy:
     Type: "AWS::IAM::Policy"
     Properties:
-      PolicyName: "Allow_Lambda"
+      PolicyName: "PolicyACMList"
       Roles:
         - !Ref BPDefaultExecutionRole
       PolicyDocument:
@@ -21,7 +21,7 @@ Resources:
               - "iam:GetPolicy"
               - "iam:GetPolicyVersion"
             Resource: 
-              - "arn:aws:iam::${AWS::AccountId}:policy/Allow_lambda"
+              - "arn:aws:iam::${AWS::AccountId}:policy/PolicyACMList"
   BPDefaultExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -32,7 +32,7 @@ Resources:
           Value: CloudEngineer
         - Key: CreateBy
           Value: Linkpartners
-      RoleName: "bp-devops-lambda-acm-list-dev-certificateChecker-assumeRole"
+      RoleName: "lambda-acm-list-dev-certificateChecker-assumeRole"
       Description: "Setup Default Execution Stack"     
       AssumeRolePolicyDocument:
         Version: "2012-10-17"

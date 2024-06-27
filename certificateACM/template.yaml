@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: 'Create function Lambda for listing ACM certificates and notifying in a Microsoft Teams channel'
+
+Parameters:
+  SNSDysplayName:
+    Type: String
+    Default: "MySnsTopicDisplayName"
+    Description: "The name of the SNS"
+  SNSTopicName:
+    Type: String
+    Default: "Lambda-ACM-List-MySNSTopic"
+    Description: "The name of the Topic SNS"
+  Email:
+    Type: String
+    Default: "daniel.nascimento@o2b.com.br"
+    Description: "Email for notify"
+  EventBridgeName:
+    Type: String
+    Default: "ACMListTriggerEventBridge-Dev"
+    Description: "The name of the EventBridge"
+  IAMPolicyName:
+    Type: String
+    Default: "PolicyACMList"
+    Description: "The name of the Policy"
+
+Resources:
+  ACMListLambdaFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      MemorySize: 128
+      Timeout: 30
+      Role: !GetAtt ACMListLambdaFunctionRole.Arn
+      CodeUri: lambda/
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref MySNSTopic
+
+  ACMListLambdaFunctionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: 
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/service-role/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/IAMReadOnlyAccess
+
+  Policy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: !Ref IAMPolicyName 
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'acm:*'
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - 'sns:Publish'
+            Resource: !GetAtt MySNSTopic.Arn
+          - Effect: Allow
+            Action:
+              - 'iam:AssumeRole'
+            Resource: 'arn:aws:iam::*:role/lambda-acm-list-dev-certificateChecker-assumeRole'
+
+  MySNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: !Ref SNSDysplayName 
+      TopicName: !Ref SNSTopicName 
+      Subscription:
+        - Endpoint: !Ref Email 
+          Protocol: email
+
+  SNSLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt ACMListLambdaFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref MySNSTopic
+
+  ACMListEventBridge: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Name: !Ref EventBridgeName
+      Description: "EventRule"
+      EventPattern: 
+        source: ["aws.cloudwatch"]
+        detail-type: 
+          - "Scheduled Event"
+      ScheduleExpression: "rate(7 days)"
+      Targets: 
+        - Arn: !GetAtt ACMListLambdaFunction.Arn
+          Id: "EC2ImageBuilderEventBridge"
+
+  MyCloudWatchDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: "Certificate-ACM-List-Dashboard"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 1,
+              "properties": {
+                "markdown": "# My Custom Dashboard"
+              }
+            },
+            {
+              "type": "custom",
+              "x": 0,
+              "y": 1,
+              "width": 24,
+              "height": 8,
+              "properties": {
+                "endpoint": "${ACMListLambdaFunction.Arn}",
+                "updateOn": {
+                  "refresh": true,
+                  "resize": true,
+                  "timeRange": true
+                }
+              }
+            }
+          ]
+        }
