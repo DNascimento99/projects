@@ -32,7 +32,7 @@ def assume_role(account_id, role_name):
     
 def get_allowed_roles():
     iam_client = boto3.client('iam')
-    policy_name = 'PolicyACMList' ## Policy onde as rolea a serem assumidas estão definidas
+    policy_name = policy_name = os.environ.get('PolicyACMList')
     roles = []
     try:
         response = iam_client.get_policy(PolicyArn=f'arn:aws:iam::{get_account_id()}:policy/{policy_name}')

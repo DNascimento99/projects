@@ -37,6 +37,7 @@ Resources:
       Environment:
         Variables:
           SNS_TOPIC_ARN: !Ref MySNSTopic
+          PolicyACMList: !Ref IAMPolicyName
 
   ACMListLambdaFunctionRole:
     Type: 'AWS::IAM::Role'
@@ -56,9 +57,11 @@ Resources:
         - arn:aws:iam::aws:policy/IAMReadOnlyAccess
 
   Policy:
-    Type: 'AWS::IAM::Policy'
+    Type: 'AWS::IAM::ManagedPolicy'
     Properties:
-      PolicyName: !Ref IAMPolicyName 
+      ManagedPolicyName: !Ref IAMPolicyName
+      Description: Policy creating for assumed role
+      Path: /
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -69,12 +72,14 @@ Resources:
           - Effect: Allow
             Action:
               - 'sns:Publish'
-            Resource: !GetAtt MySNSTopic.Arn
+            Resource: !Ref MySNSTopic
           - Effect: Allow
             Action:
               - 'iam:AssumeRole'
             Resource: 'arn:aws:iam::*:role/lambda-acm-list-dev-certificateChecker-assumeRole'
-
+    DependsOn: 
+      - MySNSTopic
+      
   MySNSTopic:
     Type: "AWS::SNS::Topic"
     Properties:

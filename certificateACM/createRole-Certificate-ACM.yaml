@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Stack for creating Role, Inline Policies for AWS Account
+Parameters:
+  PrincipalAccountID:
+    Type: String
+    Default: "952494594903"
+    Description: "Account Principal"
+Resources:
+  ExecutionInlinePolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "PolicyACMList"
+      Roles:
+        - !Ref DefaultExecutionRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement: 
+          - Effect: "Allow"
+            Action:
+              - "ACM:*"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "iam:ListRoles"
+              - "iam:GetRole"
+              - "iam:GetPolicy"
+              - "iam:GetPolicyVersion"
+            Resource: 
+              - !Sub "arn:aws:iam::${PrincipalAccountID}:policy/PolicyACMList"
+  DefaultExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}"
+        - Key: CreateBy
+          Value: Daniel
+      RoleName: "lambda-acm-list-dev-certificateChecker-assumeRole"
+      Description: "Setup Default Execution Stack"     
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+               "AWS": !Sub "arn:aws:iam::${PrincipalAccountID}:root"                    
+            Action: 
+              - sts:AssumeRole

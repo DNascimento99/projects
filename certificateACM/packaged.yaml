@@ -35,11 +35,13 @@ Resources:
         Fn::GetAtt:
         - ACMListLambdaFunctionRole
         - Arn
-      CodeUri: s3://s3-acm-list/3c500bd6e2175bd8c106cbcfac48a37d
+      CodeUri: s3://s3-acm-list/859ff70c02e400b006e3c548f5099d84
       Environment:
         Variables:
           SNS_TOPIC_ARN:
             Ref: MySNSTopic
+          PolicyACMList:
+            Ref: IAMPolicyName
     Metadata:
       SamResourceId: ACMListLambdaFunction
   ACMListLambdaFunctionRole:
@@ -61,10 +63,12 @@ Resources:
     Metadata:
       SamResourceId: ACMListLambdaFunctionRole
   Policy:
-    Type: AWS::IAM::Policy
+    Type: AWS::IAM::ManagedPolicy
     Properties:
-      PolicyName:
+      ManagedPolicyName:
         Ref: IAMPolicyName
+      Description: Policy creating for assumed role
+      Path: /
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -76,13 +80,13 @@ Resources:
           Action:
           - sns:Publish
           Resource:
-            Fn::GetAtt:
-            - MySNSTopic
-            - Arn
+            Ref: MySNSTopic
         - Effect: Allow
           Action:
           - iam:AssumeRole
           Resource: arn:aws:iam::*:role/lambda-acm-list-dev-certificateChecker-assumeRole
+    DependsOn:
+    - MySNSTopic
     Metadata:
       SamResourceId: Policy
   MySNSTopic:
