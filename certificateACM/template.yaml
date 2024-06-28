@@ -13,7 +13,7 @@ Parameters:
     Description: "The name of the Topic SNS"
   Email:
     Type: String
-    Default: "daniel.nascimento@o2b.com.br"
+    Default: "" #Informar Email
     Description: "Email for notify"
   EventBridgeName:
     Type: String
