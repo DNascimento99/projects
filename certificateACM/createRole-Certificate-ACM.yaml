@@ -3,7 +3,7 @@ Description: Stack for creating Role, Inline Policies for AWS Account
 Parameters:
   PrincipalAccountID:
     Type: String
-    Default: "952494594903"
+    Default: "" # Informar ID da conta onde o lambda está rodando
     Description: "Account Principal"
 Resources:
   ExecutionInlinePolicy:
